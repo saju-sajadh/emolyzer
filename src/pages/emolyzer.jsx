@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from "react";
 import EmotionRecognition from "../components/emotion_recognition";
 import { useNavigate, useParams } from "react-router-dom";
-import { Appwrite } from "../constants/appwrite";
-import { Query } from "appwrite";
+import { query, where, getDocs, updateDoc, collection, doc } from "firebase/firestore";
+import { FIRESTORE } from "../constants/firebase";
 
 const Emolyzer = () => {
   const navigate = useNavigate();
@@ -11,24 +11,11 @@ const Emolyzer = () => {
 
   const fetchData = async () => {
     try {
-      const response = await Appwrite.databases.listDocuments(
-        Appwrite.databaseId,
-        Appwrite.collectionId,
-        [Query.equal("uid", uid)] 
+      const querySnapshot = await getDocs(
+        query(collection(FIRESTORE, "users"), where("uid", "==", uid))
       );
-  
-      if (response.documents.length > 0) {
-        const foundDocument = response.documents[0]; 
-        const session = foundDocument.sessionId; 
-        if(!session || session !== sessionId){
-          navigate("/");
-        }
-        if(foundDocument){
-          setUser(foundDocument)
-        }
-      } else {
-        navigate('/');
-      }
+      const user = querySnapshot.docs.map((doc) => doc.data())[0];
+      setUser(user);
     } catch (error) {
       console.error("Error fetching data:", error);
     }
@@ -37,14 +24,16 @@ const Emolyzer = () => {
   const handleSignout = async () => {
     try {
       if (user && uid) {
-        const updateResponse = await Appwrite.databases.updateDocument(
-          Appwrite.databaseId,
-          Appwrite.collectionId,
-          uid,
-          {sessionId: ''},
-        )
-        console.log('Session cleared:', updateResponse);
-        navigate("/");
+        const querySnapshot = await getDocs(
+          query(collection(FIRESTORE, "users"), where("uid", "==", uid))
+        );
+        if (!querySnapshot.empty) {
+          const userDocRef = doc(FIRESTORE, "users", querySnapshot.docs[0].id);
+          await updateDoc(userDocRef, { sessionId: '' });
+          navigate('/');
+        } else {
+          console.log("No user document found with this UID.");
+        }
       }
     } catch (error) {
       console.error("Error updating sessionId:", error);
@@ -64,10 +53,8 @@ const Emolyzer = () => {
         >
           Emolyzer
         </a>
-        <p
-          className="bg-[#1A73E8] text-white rounded px-3 py-2 font-bold hover:bg-blue-600"
-        >
-          {user != null ? user.name : uid}
+        <p className="bg-[#1A73E8] text-white rounded px-3 py-2 font-bold hover:bg-blue-600">
+          {user != null ? user.email : `${uid.substring(0, 15)}...`}
         </p>
       </nav>
       <div className="grid lg:grid-cols-2 gap-10 lg:gap-40 w-full h-screen px-4 md:px-10 lg:px-40">

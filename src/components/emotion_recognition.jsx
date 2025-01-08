@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import * as faceapi from 'face-api.js';
 import Webcam from "react-webcam";
-import { Appwrite } from '../constants/appwrite';
 import { useParams } from 'react-router-dom';
+import { FIRESTORE } from '../constants/firebase';
+import { query, where, getDocs, updateDoc, collection, doc } from "firebase/firestore";
 
 const EmotionRecognition = () => {
   const webcamRef = useRef(null);
@@ -66,20 +67,21 @@ const EmotionRecognition = () => {
     const updateEmotion = async () => {
       if (detectedEmotion) {
         try {
-          const response = await Appwrite.databases.updateDocument(
-            Appwrite.databaseId,
-            Appwrite.collectionId,
-            uid, 
-            { emotion: detectedEmotion } 
-          );
-          console.log("Emotion updated:", response);
+          const querySnapshot = await getDocs(query(collection(FIRESTORE, "users"), where("uid", "==", uid)));
+          if (!querySnapshot.empty) {
+            const userDocRef = doc(FIRESTORE, "users", querySnapshot.docs[0].id);
+            await updateDoc(userDocRef, { emotion: detectedEmotion });
+            console.log("Emotion updated:", detectedEmotion);
+          } else {
+            console.log("No user document found with this UID.");
+          }
         } catch (error) {
           console.error("Error updating emotion:", error);
         }
       }
     };
 
-    const intervalId = setInterval(updateEmotion, 60000);
+    const intervalId = setInterval(updateEmotion, 35000);
 
     return () => clearInterval(intervalId);
   }, [detectedEmotion]); 

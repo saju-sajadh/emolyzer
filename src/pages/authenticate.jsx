@@ -2,45 +2,38 @@ import React, { useState } from "react";
 import { Header } from "../components/header";
 import QRCode from "react-qr-code";
 import { v4 as uuidv4 } from "uuid";
-import { Appwrite } from "../constants/appwrite";
-import { Query } from "appwrite";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
+import { collection, query, where, getDocs } from "firebase/firestore";
+import { FIRESTORE } from "../constants/firebase";
 
 const sessionId = uuidv4();
 
 const Authenticate = () => {
-
-  const [careGiver, setCareGiver] = useState("");
+  const [uid, setuid] = useState("");
   const navigate = useNavigate();
 
   const fetchData = async () => {
     try {
-      const response = await Appwrite.databases.listDocuments(
-        Appwrite.databaseId,
-        Appwrite.collectionId,
-        [Query.equal("uid", careGiver)] 
-      );
-  
-      if (response.documents.length > 0) {
-        const foundDocument = response.documents[0]; 
-        const session = foundDocument.sessionId; 
-        if(session && sessionId && session == sessionId){
-          navigate(`/authenticate/${session}/${careGiver}`)
-        }else if(session !== sessionId && careGiver.length === 20){
-          toast.error('Please Scan again!')
-        }
-        else{
-          console.log(null);
-        }
-      } else {
-        console.log("No document found with uid:", careGiver);
+      const querySnapshot = await getDocs(query(collection(FIRESTORE, "users"), where("uid", "==", uid)));
+      if (!querySnapshot.empty) {
+        querySnapshot.forEach((doc) => {
+          const user = doc.data();
+          const session = user?.sessionId;
+          if (session && sessionId && session == sessionId) {
+                navigate(`/authenticate/${session}/${uid}`);
+              } else if (session !== sessionId && uid.length === 28) {
+                toast.error("Please Scan again!");
+              } else {
+                console.log(null);
+              }
+            }
+        );
       }
     } catch (error) {
       console.error("Error fetching data:", error);
     }
   };
-  
 
   fetchData();
 
@@ -60,12 +53,12 @@ const Authenticate = () => {
             the world.
           </p>
           <div className="w-[500px] py-3">
-          <p className="m-1 text-[14px] md:text-[16px] lg:text-[18px] text-black max-w-[500px]">
-            1. Scan the  QR code first
-          </p>
-          <p className="m-1 text-[14px] md:text-[16px] lg:text-[18px] text-black max-w-[500px]">
-            2. Paste the CaregiverId
-          </p>
+            <p className="m-1 text-[14px] md:text-[16px] lg:text-[18px] text-black max-w-[500px]">
+              1. Scan the QR code first
+            </p>
+            <p className="m-1 text-[14px] md:text-[16px] lg:text-[18px] text-black max-w-[500px]">
+              2. Paste the uidId
+            </p>
           </div>
         </div>
 
@@ -83,10 +76,10 @@ const Authenticate = () => {
             <input
               autoComplete="off"
               autoCorrect="off"
-              value={careGiver}
-              onChange={(e) => setCareGiver(e.target.value)}
+              value={uid}
+              onChange={(e) => setuid(e.target.value)}
               className="mt-4 focus:outline-none w-full px-2 py-2 rounded text-center italic"
-              placeholder="careGiverId"
+              placeholder="Enter UID"
             />
           </div>
         </div>
