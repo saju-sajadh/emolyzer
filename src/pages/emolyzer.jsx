@@ -1,13 +1,21 @@
 import React, { useEffect, useState } from "react";
 import EmotionRecognition from "../components/emotion_recognition";
 import { useNavigate, useParams } from "react-router-dom";
-import { query, where, getDocs, updateDoc, collection, doc } from "firebase/firestore";
+import {
+  query,
+  where,
+  getDocs,
+  updateDoc,
+  collection,
+  doc,
+} from "firebase/firestore";
 import { FIRESTORE } from "../constants/firebase";
 
 const Emolyzer = () => {
   const navigate = useNavigate();
   const { sessionId, uid } = useParams();
   const [user, setUser] = useState(null);
+
 
   const fetchData = async () => {
     try {
@@ -29,8 +37,8 @@ const Emolyzer = () => {
         );
         if (!querySnapshot.empty) {
           const userDocRef = doc(FIRESTORE, "users", querySnapshot.docs[0].id);
-          await updateDoc(userDocRef, { sessionId: '' });
-          navigate('/');
+          await updateDoc(userDocRef, { sessionId: "" });
+          navigate("/");
         } else {
           console.log("No user document found with this UID.");
         }
@@ -75,7 +83,7 @@ const Emolyzer = () => {
               className="bg-[#1A73E8] mt-4 text-white rounded px-6 py-3 font-bold hover:bg-blue-600"
             >
               Signout
-            </button>
+            </button>           
           </div>
         </div>
 

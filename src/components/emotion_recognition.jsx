@@ -1,9 +1,18 @@
-import React, { useRef, useEffect, useState } from 'react';
-import * as faceapi from 'face-api.js';
+import React, { useRef, useEffect, useState } from "react";
+import * as faceapi from "face-api.js";
 import Webcam from "react-webcam";
-import { useParams } from 'react-router-dom';
-import { FIRESTORE } from '../constants/firebase';
-import { query, where, getDocs, updateDoc, collection, doc } from "firebase/firestore";
+import { useParams } from "react-router-dom";
+import {
+  setDoc,
+  doc,
+  collection,
+  addDoc,
+  getDoc,
+  onSnapshot,
+  deleteDoc,
+} from "firebase/firestore";
+import { FIRESTORE } from "../constants/firebase";
+import { getDatabase, ref, set } from "firebase/database";
 
 const EmotionRecognition = () => {
   const webcamRef = useRef(null);
@@ -11,26 +20,41 @@ const EmotionRecognition = () => {
   const { uid } = useParams();
   const [detectedEmotion, setDetectedEmotion] = useState(null);
 
-  useEffect(()=>{
-    console.log(detectedEmotion)
-  },[detectedEmotion])
+  const [roomId, setRoomId] = useState("");
+  const [localStream, setLocalStream] = useState(null);
+  const [peerConnection, setPeerConnection] = useState(null);
+  const [remoteStream, setRemoteStream] = useState(null);
+
+  const videoConstraints = {
+    facingMode: "user",
+    width: { ideal: 640 },
+    height: { ideal: 480 },
+  };
 
   useEffect(() => {
     const loadModels = async () => {
-      await faceapi.loadSsdMobilenetv1Model('/models');
-      await faceapi.loadFaceLandmarkModel('/models');
-      await faceapi.loadFaceRecognitionModel('/models');
-      await faceapi.loadFaceExpressionModel('/models');
+      await faceapi.loadSsdMobilenetv1Model("/models");
+      await faceapi.loadFaceLandmarkModel("/models");
+      await faceapi.loadFaceRecognitionModel("/models");
+      await faceapi.loadFaceExpressionModel("/models");
     };
-
     loadModels();
   }, []);
 
   useEffect(() => {
+    if (localStream) {
+      createRoom();
+    }
+  }, [localStream]);
+
+  useEffect(() => {
     const interval = setInterval(async () => {
-      if (webcamRef.current !== null && webcamRef.current.video.readyState === 4) {
+      if (webcamRef.current && webcamRef.current.video.readyState === 4) {
         const video = webcamRef.current.video;
-        const displaySize = { width: video.videoWidth, height: video.videoHeight };
+        const displaySize = {
+          width: video.videoWidth,
+          height: video.videoHeight,
+        };
 
         const canvas = canvasRef.current;
         canvas.width = displaySize.width;
@@ -38,53 +62,120 @@ const EmotionRecognition = () => {
 
         faceapi.matchDimensions(canvas, displaySize);
 
-        const detections = await faceapi.detectAllFaces(video, new faceapi.SsdMobilenetv1Options())
+        const detections = await faceapi
+          .detectAllFaces(video, new faceapi.SsdMobilenetv1Options())
           .withFaceLandmarks()
           .withFaceExpressions();
 
-        const resizedDetections = faceapi.resizeResults(detections, displaySize);
-
+        const resizedDetections = faceapi.resizeResults(
+          detections,
+          displaySize
+        );
 
         const expressions = resizedDetections[0]?.expressions;
+
         if (expressions) {
-          const emotion = Object.keys(expressions).reduce((a, b) => (expressions[a] > expressions[b] ? a : b));
-          setDetectedEmotion(emotion); 
+          const emotion = Object.keys(expressions).reduce((a, b) =>
+            expressions[a] > expressions[b] ? a : b
+          );
+          setDetectedEmotion(emotion);
+
+          const db = getDatabase();
+          const emotionRef = ref(db, uid);
+          set(emotionRef, {
+            emotion: emotion,
+            timestamp: new Date().toISOString(),
+          });
         }
 
-        const context = canvas.getContext('2d');
+        const context = canvas.getContext("2d");
         context.clearRect(0, 0, displaySize.width, displaySize.height);
         faceapi.draw.drawDetections(canvas, resizedDetections);
         faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
         faceapi.draw.drawFaceExpressions(canvas, resizedDetections);
       }
     }, 100);
-
     return () => clearInterval(interval);
-  }, []);
-
+  }, [uid]);
 
   useEffect(() => {
-    const updateEmotion = async () => {
-      if (detectedEmotion) {
+    const initializeLocalStream = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: videoConstraints,
+          audio: false,
+        });
+        setLocalStream(stream);
+      } catch (err) {
+        console.error("Error accessing media devices.", err);
+      }
+    };
+    initializeLocalStream();
+  }, []);
+
+  const createRoom = async () => {
+    const roomRef = doc(FIRESTORE, "rooms", uid);
+    const roomSnapshot = await getDoc(roomRef);
+    if (roomSnapshot.exists()) {
+      await deleteDoc(roomRef);
+      console.log(`Existing room with ID ${uid} deleted.`);
+    }
+    if (!localStream) {
+      console.error("Local stream is not initialized.");
+      return;
+    }
+    const pc = new RTCPeerConnection();
+    localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+    pc.onicecandidate = async (event) => {
+      if (event.candidate) {
         try {
-          const querySnapshot = await getDocs(query(collection(FIRESTORE, "users"), where("uid", "==", uid)));
-          if (!querySnapshot.empty) {
-            const userDocRef = doc(FIRESTORE, "users", querySnapshot.docs[0].id);
-            await updateDoc(userDocRef, { emotion: detectedEmotion });
-            console.log("Emotion updated:", detectedEmotion);
-          } else {
-            console.log("No user document found with this UID.");
-          }
+          const candidateData = {
+            candidate: event.candidate.candidate,
+            sdpMid: event.candidate.sdpMid,
+            sdpMLineIndex: event.candidate.sdpMLineIndex,
+          };
+          const candidatesRef = collection(roomRef, "callerCandidates");
+          await addDoc(candidatesRef, candidateData);
+          console.log("ICE candidate added to Firestore:", candidateData);
         } catch (error) {
-          console.error("Error updating emotion:", error);
+          console.error("Error adding ICE candidate to Firestore:", error);
         }
       }
     };
 
-    const intervalId = setInterval(updateEmotion, 35000);
+    pc.ontrack = (event) => {
+      setRemoteStream(event.streams[0]);
+    };
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      await setDoc(roomRef, { offer });
+      console.log("Offer sent to Firestore:", offer);
+    } catch (error) {
+      console.error("Error creating offer:", error);
+    }
 
-    return () => clearInterval(intervalId);
-  }, [detectedEmotion]); 
+    onSnapshot(roomRef, (snapshot) => {
+      const data = snapshot.data();
+      if (data?.answer) {
+        const answer = new RTCSessionDescription(data.answer);
+        pc.setRemoteDescription(answer);
+      }
+    });
+
+    const calleeCandidatesRef = collection(roomRef, "calleeCandidates");
+    onSnapshot(calleeCandidatesRef, (snapshot) => {
+      snapshot.docChanges().forEach((change) => {
+        if (change.type === "added") {
+          const candidate = new RTCIceCandidate(change.doc.data());
+          pc.addIceCandidate(candidate);
+        }
+      });
+    });
+
+    setPeerConnection(pc);
+    setRoomId(roomRef.id);
+  };
 
   return (
     <div className="relative w-full h-full">
@@ -102,6 +193,8 @@ const EmotionRecognition = () => {
           transform: "scaleX(-1)",
           borderRadius: "15px",
         }}
+        audio={false}
+        screenshotFormat="image/jpeg"
       />
 
       <canvas
@@ -114,7 +207,7 @@ const EmotionRecognition = () => {
           bottom: 0,
           width: "100%",
           height: "80%",
-          pointerEvents: "none", 
+          pointerEvents: "none",
         }}
       />
     </div>
