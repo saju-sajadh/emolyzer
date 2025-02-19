@@ -10,6 +10,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@ant-design/icons": "^5.6.1",
     "@firebase/firestore": "^4.7.5",
     "@firebase/storage": "^0.13.4",
     "@fortawesome/fontawesome-svg-core": "^6.7.2",

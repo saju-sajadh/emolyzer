@@ -13,6 +13,7 @@ import {
 } from "firebase/firestore";
 import { FIRESTORE } from "../constants/firebase";
 import { getDatabase, ref, set } from "firebase/database";
+import { CheckCircleOutlined, LoadingOutlined } from "@ant-design/icons";
 
 const EmotionRecognition = () => {
   const webcamRef = useRef(null);
@@ -24,6 +25,7 @@ const EmotionRecognition = () => {
   const [localStream, setLocalStream] = useState(null);
   const [peerConnection, setPeerConnection] = useState(null);
   const [remoteStream, setRemoteStream] = useState(null);
+  const [connection, setConnection] = useState(false);
 
   const videoConstraints = {
     facingMode: "user",
@@ -118,7 +120,7 @@ const EmotionRecognition = () => {
     const roomSnapshot = await getDoc(roomRef);
     if (roomSnapshot.exists()) {
       await deleteDoc(roomRef);
-      console.log(`Existing room with ID ${uid} deleted.`);
+      console.log(`Pruning in process....`);
     }
     if (!localStream) {
       console.error("Local stream is not initialized.");
@@ -136,7 +138,8 @@ const EmotionRecognition = () => {
           };
           const candidatesRef = collection(roomRef, "callerCandidates");
           await addDoc(candidatesRef, candidateData);
-          console.log("ICE candidate added to Firestore:", candidateData);
+          console.log("ICE candidate added to Firestore");
+          setConnection(true);
         } catch (error) {
           console.error("Error adding ICE candidate to Firestore:", error);
         }
@@ -150,7 +153,7 @@ const EmotionRecognition = () => {
       const offer = await pc.createOffer();
       await pc.setLocalDescription(offer);
       await setDoc(roomRef, { offer });
-      console.log("Offer sent to Firestore:", offer);
+      console.log("Offer sent to Firestore");
     } catch (error) {
       console.error("Error creating offer:", error);
     }
@@ -179,6 +182,16 @@ const EmotionRecognition = () => {
 
   return (
     <div className="relative w-full h-full">
+      <div className="absolute bottom-10 left-1/2">
+        <span
+          className={`${
+            connection ? "text-green-600" : "text-red-600"
+          } text-sm font-serif font-semibold flex gap-2`}
+        >
+          {connection ? <CheckCircleOutlined /> : <LoadingOutlined />}
+          <p>{connection ? "Ready to connect" : "connecting..."}</p>
+        </span>
+      </div>
       <Webcam
         ref={webcamRef}
         style={{
